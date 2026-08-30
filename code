@@ -1,0 +1,128 @@
+import pandas as pd
+eth = pd.read_csv('uc_admissions_summary_by_ethnicity.csv')
+
+sub = eth[(eth.fall_term == 2025) & (eth.count_type == 'App')]
+
+campus_apps = sub[sub.campus != 'Systemwide']['n'].sum()      # sum of per-campus application counts
+unique_applicants = sub[sub.campus == 'Systemwide']['n'].sum()  # deduplicated applicant count
+
+avg_campuses_per_applicant = campus_apps / unique_applicants
+print(round(avg_campuses_per_applicant, 2))  # 4.4
+
+import pandas as pd
+dash = pd.read_csv('dashboard_data.csv')
+
+ucla_2025 = dash[
+    (dash.fall_term == 2025) &
+    (dash.campus == 'Los Angeles') &
+    (dash.school_type == 'High Schools (Public)')
+]
+
+total_applicants = ucla_2025['applicants'].sum()
+total_admits = ucla_2025['admits'].sum()
+admit_rate = total_admits / total_applicants
+print(round(admit_rate, 4))  # 0.0829
+
+import pandas as pd
+disc = pd.read_csv('uc_freshman_admission_by_discipline.csv')
+
+d = disc[disc.fall_term == 2025]
+overall = d[d.broad_discipline == 'All disciplines'].set_index('campus')['admit_rate']
+cs = d[d.broad_discipline == 'Computer Science'].set_index('campus')['admit_rate']
+
+compare = pd.DataFrame({'overall_admit_rate': overall, 'cs_admit_rate': cs})
+compare['gap'] = compare['overall_admit_rate'] - compare['cs_admit_rate']
+print(compare.sort_values('gap', ascending=False))
+
+import pandas as pd
+disc = pd.read_csv('uc_freshman_admission_by_discipline.csv')
+
+row = disc[(disc.fall_term == 2025) & (disc.campus == 'Berkeley') & (disc.broad_discipline == 'Computer Science')]
+iqr = row['admit_gpa_p75'].iloc[0] - row['admit_gpa_p25'].iloc[0]
+print(round(iqr, 2))  # 0.09
+
+import pandas as pd
+eth = pd.read_csv('uc_admissions_summary_by_ethnicity.csv')
+
+d = eth[(eth.fall_term == 2025) & (eth.entrant_level == 'freshman') & (eth.campus != 'Systemwide')]
+d = d[d.ethnicity.isin(['White', 'Hispanic/Latino(a)'])]
+
+pivot_app = d[d.count_type == 'App'].pivot(index='campus', columns='ethnicity', values='n')
+pivot_adm = d[d.count_type == 'Adm'].pivot(index='campus', columns='ethnicity', values='n')
+
+rate = pivot_adm / pivot_app
+rate.columns = ['hisp_rate', 'white_rate']
+rate['white_higher'] = rate['white_rate'] > rate['hisp_rate']
+print(rate.round(4))
+print(rate['white_higher'].sum())  # 9
+
+import pandas as pd
+eth = pd.read_csv('uc_admissions_summary_by_ethnicity.csv')
+
+d = eth[(eth.fall_term == 2025) & (eth.entrant_level == 'freshman') & (eth.campus == 'Systemwide')]
+d = d[d.ethnicity.isin(['White', 'Hispanic/Latino(a)'])]
+
+app = d[d.count_type == 'App'].set_index('ethnicity')['n']
+adm = d[d.count_type == 'Adm'].set_index('ethnicity')['n']
+rate = adm / app
+print(rate.round(4))
+# Hispanic/Latino(a)    0.7453
+# White                 0.6868
+
+import pandas as pd
+dash = pd.read_csv('dashboard_data.csv')
+
+sub2023 = dash[dash.fall_term == 2023]
+uw = sub2023[sub2023.campus == 'Universitywide']  # one row per school, avoids counting each school 10x
+
+total_completers = uw['hs_completers'].sum()
+total_ccc = uw['enrolled_ccc'].sum()
+share = total_ccc / total_completers
+print(round(share * 100, 2))  # 33.64
+
+import pandas as pd
+dash = pd.read_csv('dashboard_data.csv')
+
+row = dash[
+    (dash.fall_term == 2023) &
+    (dash.high_school.str.contains('MISSION SAN JOSE', case=False, na=False)) &
+    (dash.campus == 'Universitywide')
+]
+
+applicants = row['applicants'].iloc[0]
+ag = row['ag_completers'].iloc[0]
+share = applicants / ag
+print(round(share * 100, 2))  # 99.06
+
+import pandas as pd
+dash = pd.read_csv('dashboard_data.csv')
+
+sub = dash[(dash.fall_term == 2025) & (dash.campus == 'Universitywide')]
+sub = sub.dropna(subset=['cds_code'])
+
+public = sub[sub.school_type.notna()]  # dataset only contains public-school records
+with_apps = public[public.applicants.fillna(0) > 0]
+
+print(with_apps.cds_code.nunique())              # 229 (all public school_type categories)
+print((with_apps.school_type == 'High Schools (Public)').sum())  # 196 (strict "High Schools (Public)" only)
+
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+
+dash = pd.read_csv('bay_area_modeling_table.csv')  # raw table, so we build our own model
+berk = dash[(dash.campus == 'Berkeley') & (dash.fall_term.between(2022, 2025))].copy()
+
+cols = ['admit_rate', 'ag_completion_rate', 'frpm_pct', 'applicant_gpa', 'graduates']
+model_df = berk[['high_school', 'fall_term'] + cols].dropna(subset=cols).reset_index(drop=True)
+
+X = model_df[['ag_completion_rate', 'frpm_pct', 'applicant_gpa', 'graduates']]  # graduates = school-size proxy
+y = model_df['admit_rate']
+
+reg = LinearRegression().fit(X, y)
+model_df['expected_admit_rate'] = reg.predict(X)
+model_df['residual'] = model_df['admit_rate'] - model_df['expected_admit_rate']
+
+targets = ['HERCULES HIGH SCHOOL', 'MISSION SENIOR HIGH SCHOOL', 'PHILLIP & SALA BURTON ACAD HS']
+result = model_df[model_df.high_school.isin(targets)]
+print(result.groupby('high_school')[['admit_rate', 'expected_admit_rate', 'residual']]
+      .mean().sort_values('residual', ascending=False))
